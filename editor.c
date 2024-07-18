@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/types.h>
 #include <termios.h>
 #include <unistd.h>
 #include <errno.h>
@@ -139,6 +140,21 @@ int getWindowSize(int *rows, int *cols) {
   }
 }
 
+/*** file i/o ***/
+
+void editorOpen() {
+
+  char *line = "Hello, world!";
+  ssize_t linelen = 13;
+
+  E.row.size = linelen;
+  E.row.chars = malloc(linelen+1);
+  memcpy(E.row.chars, line, linelen);
+  E.row.chars[linelen] = '\0';
+  E.numRows = 1;
+}
+
+
 /*** append buffer ***/
 
 struct abuf {
@@ -164,6 +180,7 @@ void abFree(struct abuf *ab) {
 void editorDrawRows(struct abuf *ab) {
   int y;
   for (y = 0; y < E.screenRows; y++) {
+    if (y >= E.numRows) {
     if (y == E.screenRows / 3) {
       char welcome[80];
       int welcomelen = snprintf(welcome, sizeof(welcome), "Editor -- varsion %s", EDITOR_VERSION);
@@ -177,6 +194,11 @@ void editorDrawRows(struct abuf *ab) {
       abAppend(ab, welcome, welcomelen);
     } else {
       abAppend(ab, "~", 1);
+    }
+    } else {
+      int len = E.row.size;
+      if (len > E.screenCols) len = E.screenCols;
+      abAppend(ab, E.row.chars,len);
     }
     abAppend(ab, "\x1b[K",3); // clears line right of cursor, doing this instead clearing screen at once
     if (y < E.screenRows -1) {
@@ -265,6 +287,7 @@ void initEditor() {
 int main () {
   enableRawMode();
   initEditor();
+  editorOpen();
 
   while (1) {
     editorRefreshScreen();
