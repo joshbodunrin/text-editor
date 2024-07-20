@@ -1,4 +1,9 @@
 /*** includes ***/
+
+#define _DEFAULT_SOURCE
+#define _BSD_SOURCE
+#define _GNU_SOURCE
+
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,7 +41,7 @@ struct editorConfig {
   int screenRows;
   int screenCols;
   int numRows;
-  erow row;
+  erow *row;
   struct termios orig_termios; //global variable to return to original state
 };
 
@@ -140,18 +145,39 @@ int getWindowSize(int *rows, int *cols) {
   }
 }
 
+/*** row operations ***/
+
+void editorAppendRow(char *s, size_t len) {
+  E.row->size = len;
+  E.row->chars = malloc(len + 1);
+  memcpy(E.row->chars, s, len);
+  E.row->chars[len] = '\0';
+  E.numRows = 1;
+}
+    
+  
+
 /*** file i/o ***/
 
-void editorOpen() {
+void editorOpen(char *filename) {
 
-  char *line = "Hello, world!";
-  ssize_t linelen = 13;
+  FILE *fp = fopen(filename, "r");
+  if (!fp) die("fopen");
 
-  E.row.size = linelen;
-  E.row.chars = malloc(linelen+1);
-  memcpy(E.row.chars, line, linelen);
-  E.row.chars[linelen] = '\0';
-  E.numRows = 1;
+  char *line = NULL;
+  size_t linecap = 0;
+
+  ssize_t linelen;
+  linelen = getline(&line, &linecap, fp);
+  if (linelen != 1) {
+    while (linelen > 0 && (line[linelen - 1] == '\n' || line[linelen - 1] == '\r'))
+      linelen--;
+
+    editorAppendRow(line, linelen);
+    
+  }
+  free(line);
+  fclose(fp);
 }
 
 
@@ -181,7 +207,7 @@ void editorDrawRows(struct abuf *ab) {
   int y;
   for (y = 0; y < E.screenRows; y++) {
     if (y >= E.numRows) {
-    if (y == E.screenRows / 3) {
+    if (E.numRows == 0 && y == E.screenRows / 3) {
       char welcome[80];
       int welcomelen = snprintf(welcome, sizeof(welcome), "Editor -- varsion %s", EDITOR_VERSION);
       if (welcomelen > E.screenCols) welcomelen = E.screenCols;
@@ -196,9 +222,9 @@ void editorDrawRows(struct abuf *ab) {
       abAppend(ab, "~", 1);
     }
     } else {
-      int len = E.row.size;
+      int len = E.row->size;
       if (len > E.screenCols) len = E.screenCols;
-      abAppend(ab, E.row.chars,len);
+      abAppend(ab, E.row->chars,len);
     }
     abAppend(ab, "\x1b[K",3); // clears line right of cursor, doing this instead clearing screen at once
     if (y < E.screenRows -1) {
@@ -279,15 +305,18 @@ void initEditor() {
   E.cx = 0;
   E.cy = 0;
   E.numRows = 0;
+  E.row = NULL;
 
   
   if (getWindowSize(&E.screenRows, &E.screenCols) == -1) die("getWindowSize");
 } 
 
-int main () {
+int main (int argc, char *argv[]) {
   enableRawMode();
   initEditor();
-  editorOpen();
+  if (argc >= 2) {
+    editorOpen(argv[1]);
+  }
 
   while (1) {
     editorRefreshScreen();
